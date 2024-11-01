@@ -1,36 +1,32 @@
-# Первый этап: Сборка зависимостей и приложения
-FROM python:3.12 AS builder
+# Базовый образ с Python
+FROM python:3.12-slim
+
+# Установка curl для установки Poetry
+RUN apt-get update && apt-get install -y curl \
+    && curl -sSL https://install.python-poetry.org | python3 - \
+    && apt-get remove -y curl && rm -rf /var/lib/apt/lists/*
+
+# Добавление Poetry в PATH
+ENV PATH="/root/.local/bin:$PATH"
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем файлы Poetry и устанавливаем его
+# Копируем файлы для Poetry
 COPY pyproject.toml poetry.lock /app/
-RUN python -m pip install --no-cache-dir poetry==1.8.3 \
-    && poetry config virtualenvs.in-project true \
-    && poetry install --no-interaction --no-ansi  # Устанавливаем все зависимости
 
-# Копируем весь проект в рабочую директорию после установки зависимостей
+# Отключаем виртуальные окружения, чтобы Poetry установил зависимости в системное окружение
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi
+
+# Копируем остальные файлы проекта
 COPY . /app
 
-# Второй этап: Финальный образ
-FROM python:3.12-slim AS final
+# Проверяем установку alembic
+RUN alembic --version
 
-# Устанавливаем рабочую директорию
-WORKDIR /app
-
-# Копируем зависимости и приложение из образа `builder`
-COPY --from=builder /app /app
-
-# Добавляем переменные окружения для подключения к базе данных
-ENV DB_HOST=$DB_HOST \
-    DB_PORT=$DB_PORT \
-    DB_USER=$DB_USER \
-    DB_PASS=$DB_PASS \
-    DB_NAME=$DB_NAME
-
-# Открываем порт для приложения (например, для FastAPI)
+# Открываем порт для приложения
 EXPOSE 8000
 
-# Определяем команду для запуска приложения
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Запуск приложения через Poetry
+CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
